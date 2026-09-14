@@ -1,0 +1,9 @@
+config.json
+config.local.json
+.env
+*.env
+*.log
+runtime/
+__pycache__/
+*.py[cod]
+.pytest_cache/

@@ -1,0 +1,16 @@
+{
+  "host": "127.0.0.1",
+  "port": 8787,
+  "jobs_root": "/srv/dev-cockpit/runtime/jobs",
+  "projects": [
+    {
+      "id": "example-project",
+      "name": "Example Project",
+      "repository": "/srv/repos/example-project"
+    }
+  ],
+  "agents": {
+    "codex": ["codex", "exec", "--json", "--full-auto", "-C", "{worktree}", "{prompt}"],
+    "cursor": ["agent", "--workspace", "{worktree}", "{prompt}"]
+  }
+}

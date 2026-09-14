@@ -1,0 +1,24 @@
+[Unit]
+Description=Dev Cockpit remote development gateway
+After=network-online.target tailscaled.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=devcockpit
+Group=devcockpit
+WorkingDirectory=/srv/dev-cockpit
+EnvironmentFile=-/etc/dev-cockpit/dev-cockpit.env
+ExecStart=/usr/bin/python3 /srv/dev-cockpit/server.py --config /etc/dev-cockpit/config.json
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/srv/dev-cockpit/runtime /srv/repos
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target
