@@ -11,7 +11,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from cockpit.config import load_config, make_agents, make_projects
+from cockpit.config import load_config, make_agents, make_projects, make_router
 from cockpit.core import JobManager
 
 
@@ -67,6 +67,9 @@ class CockpitHandler(BaseHTTPRequestHandler):
                 self._json({"status": "ok"})
             elif parsed.path == "/api/projects":
                 self._json([{"id": p.id, "name": p.name} for p in self.manager.projects.values()])
+            elif parsed.path == "/api/agents":
+                auto_agent = self.manager.router.auto_agent if self.manager.router is not None else None
+                self._json([{"id": name, "name": "Auto (Jev)" if name == auto_agent else name} for name in self.manager.available_agents()])
             elif parsed.path == "/api/jobs":
                 self._json([job.public() for job in self.manager.list_jobs()])
             elif parsed.path.startswith("/api/jobs/"):
@@ -165,8 +168,11 @@ class CockpitHandler(BaseHTTPRequestHandler):
 
 
 def build_server(config_path: Path) -> ThreadingHTTPServer:
+    config_path = config_path.expanduser().resolve()
     config = load_config(config_path)
-    manager = JobManager(make_projects(config), make_agents(config), Path(config.get("jobs_root", config_path.parent / "runtime" / "jobs")).expanduser().resolve())
+    agents = make_agents(config)
+    router = make_router(config, agents, config_path.parent)
+    manager = JobManager(make_projects(config), agents, Path(config.get("jobs_root", config_path.parent / "runtime" / "jobs")).expanduser().resolve(), router=router)
     server = ThreadingHTTPServer((str(config.get("host", "127.0.0.1")), int(config.get("port", 8787))), CockpitHandler)
     server.manager = manager  # type: ignore[attr-defined]
     server.token = os.environ.get("DEV_COCKPIT_TOKEN")  # type: ignore[attr-defined]
