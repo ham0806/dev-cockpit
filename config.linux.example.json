@@ -10,7 +10,70 @@
     }
   ],
   "agents": {
-    "codex": ["codex", "exec", "--json", "--full-auto", "-C", "{worktree}", "{prompt}"],
-    "cursor": ["agent", "--workspace", "{worktree}", "{prompt}"]
+    "devin-swe2": [
+      "devin",
+      "--model",
+      "swe",
+      "--permission-mode",
+      "accept-edits",
+      "--respect-workspace-trust",
+      "false",
+      "-p",
+      "{prompt}"
+    ],
+    "codex-luna": [
+      "codex",
+      "exec",
+      "--model",
+      "gpt-5.6-luna",
+      "--json",
+      "--full-auto",
+      "-C",
+      "{worktree}",
+      "{prompt}"
+    ],
+    "codex-sol": [
+      "codex",
+      "exec",
+      "--model",
+      "gpt-5.6-sol",
+      "--json",
+      "--full-auto",
+      "-C",
+      "{worktree}",
+      "{prompt}"
+    ],
+    "codex-astra": [
+      "codex",
+      "exec",
+      "--model",
+      "gpt-6-astra",
+      "--json",
+      "--full-auto",
+      "-C",
+      "{worktree}",
+      "{prompt}"
+    ]
+  },
+  "routing": {
+    "enabled": true,
+    "auto_agent": "auto",
+    "fallback_agent": "devin-swe2",
+    "evaluator_command": [
+      "node",
+      "tools/jev-route.mjs"
+    ],
+    "timeout_seconds": 10,
+    "min_confidence": 0.55,
+    "astra_agent": "codex-astra",
+    "astra_fallback_agent": "codex-sol",
+    "astra_min_score": 2.4,
+    "history_file": "runtime/router.jsonl",
+    "targets": {
+      "devin-swe2": "Default for normal implementation, bug fixes, tests, and routine refactors. Prefer this whenever it can complete the task.",
+      "codex-luna": "Very small, mechanical, low-risk edits or quick exploration.",
+      "codex-sol": "Complex debugging, cross-component reasoning, migrations, or design work needing stronger reasoning.",
+      "codex-astra": "Exceptional high-risk architecture, very high ambiguity, or very large blast radius. Use sparingly."
+    }
   }
 }
