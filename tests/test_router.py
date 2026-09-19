@@ -72,12 +72,18 @@ class RouterTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             history = Path(directory) / "router.jsonl"
             prompt = "secret project prompt"
-            self.make_router(history_file=history).route(prompt)
+            router = self.make_router(history_file=history)
+            router.route(prompt)
+            router.record_outcome(prompt, "devin-swe2", "completed", 0)
             raw = history.read_text(encoding="utf-8")
-            record = json.loads(raw.strip())
+            records = [json.loads(line) for line in raw.splitlines()]
             self.assertNotIn(prompt, raw)
-            self.assertEqual(record["prompt_length"], len(prompt))
-            self.assertEqual(len(record["prompt_sha256"]), 64)
+            self.assertEqual(records[0]["event"], "decision")
+            self.assertEqual(records[1]["event"], "outcome")
+            self.assertEqual(records[1]["status"], "completed")
+            self.assertEqual(records[1]["exit_code"], 0)
+            self.assertEqual(records[0]["prompt_length"], len(prompt))
+            self.assertEqual(len(records[0]["prompt_sha256"]), 64)
 
 
 if __name__ == "__main__":
