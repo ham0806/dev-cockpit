@@ -10,7 +10,7 @@
   <main class="layout">
     <section class="card new-task"><div class="section-heading"><h2>New task</h2><span class="muted">専用worktreeで実行</span></div>
       <label>Project<select id="project"></select></label>
-      <div class="agent-picker" id="agent-picker"><label><input type="radio" name="agent" value="codex" checked> Codex</label><label><input type="radio" name="agent" value="cursor"> Cursor</label></div>
+      <div class="agent-picker" id="agent-picker"><span class="muted">Agentを読み込んでいます…</span></div>
       <label>Prompt<textarea id="prompt" rows="6" placeholder="READMEを現在の構成に合わせて更新して…"></textarea></label><button id="run" class="primary">Run</button><p id="task-error" class="error" role="alert"></p>
     </section>
     <section class="card running"><div class="section-heading"><h2>Jobs</h2><button id="refresh" class="quiet">更新</button></div><div id="jobs" class="job-list"><p class="muted">Jobを読み込んでいます…</p></div></section>
