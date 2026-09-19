@@ -70,6 +70,11 @@ class Job:
     log: list[str] = field(default_factory=list)
     changed_files: list[dict[str, Any]] = field(default_factory=list)
     diff_stat: str = ""
+    routed_agent: str | None = None
+    route_source: str | None = None
+    route_confidence: float | None = None
+    route_reasons: list[str] = field(default_factory=list)
+    route_scores: dict[str, float] = field(default_factory=dict)
 
     def public(self, include_log: bool = False) -> dict[str, Any]:
         data = asdict(self)
@@ -81,12 +86,13 @@ class Job:
 class JobManager:
     """Jobを専用worktreeで実行し、レビュー可能な状態を保持する。"""
 
-    def __init__(self, projects: Iterable[Project], agents: dict[str, list[str]], jobs_root: Path, on_change: Callable[[], None] | None = None) -> None:
+    def __init__(self, projects: Iterable[Project], agents: dict[str, list[str]], jobs_root: Path, on_change: Callable[[], None] | None = None, router: Any | None = None) -> None:
         self.projects = {project.id: project for project in projects}
         self.agents = agents
         self.jobs_root = jobs_root
         self.jobs_root.mkdir(parents=True, exist_ok=True)
         self.on_change = on_change
+        self.router = router
         self._jobs: dict[str, Job] = {}
         self._processes: dict[str, subprocess.Popen[str]] = {}
         self._lock = threading.RLock()
@@ -121,11 +127,18 @@ class JobManager:
             except KeyError as exc:
                 raise KeyError(f"unknown job: {job_id}") from exc
 
+    def available_agents(self) -> list[str]:
+        names = list(self.agents)
+        if self.router is not None:
+            return [self.router.auto_agent, *names]
+        return names
+
     def create(self, project_id: str, agent: str, prompt: str, parent_id: str | None = None) -> Job:
         prompt = bounded_text(prompt, MAX_PROMPT_LENGTH, "prompt")
         if project_id not in self.projects:
             raise ValueError("unknown project")
-        if agent not in self.agents:
+        is_auto = self.router is not None and agent == self.router.auto_agent
+        if agent not in self.agents and not is_auto:
             raise ValueError("unknown agent")
         if parent_id and self.get(parent_id).status == "running":
             raise ValueError("the parent job is still running")
@@ -147,7 +160,10 @@ class JobManager:
             self._persist(job)
 
     def _render_command(self, job: Job) -> list[str]:
-        return [part.format(prompt=job.prompt, worktree=job.worktree, project=job.project_id, job_id=job.id) for part in self.agents[job.agent]]
+        selected_agent = job.routed_agent or job.agent
+        if selected_agent not in self.agents:
+            raise ValueError("job has no executable agent")
+        return [part.format(prompt=job.prompt, worktree=job.worktree, project=job.project_id, job_id=job.id) for part in self.agents[selected_agent]]
 
     def _run(self, job_id: str) -> None:
         with self._lock:
@@ -165,6 +181,21 @@ class JobManager:
             self._persist(job)
         try:
             ensure_git_repository(project.repository)
+            if self.router is not None and job.agent == self.router.auto_agent:
+                decision = self.router.route(job.prompt)
+                if decision.agent not in self.agents:
+                    raise RuntimeError("router selected an unknown agent")
+                with self._lock:
+                    job.routed_agent = decision.agent
+                    job.route_source = decision.source
+                    job.route_confidence = decision.confidence
+                    job.route_reasons = list(decision.reasons)
+                    job.route_scores = dict(decision.scores)
+                    self._persist(job)
+                confidence = "" if decision.confidence is None else f" confidence={decision.confidence:.2f}"
+                self._append_log(job, f"[router] {decision.source} -> {decision.agent}{confidence}")
+                if decision.reasons:
+                    self._append_log(job, f"[router] reasons: {', '.join(decision.reasons)}")
             if parent:
                 if not worktree.is_dir():
                     raise RuntimeError("parent worktree no longer exists")
