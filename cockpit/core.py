@@ -227,6 +227,8 @@ class JobManager:
                 self._processes.pop(job.id, None)
                 job.finished_at = utc_now()
                 self._persist(job)
+            if self.router is not None and job.routed_agent:
+                self.router.record_outcome(job.prompt, job.routed_agent, job.status, job.exit_code)
 
     @staticmethod
     def _display_command(command: list[str]) -> str:
