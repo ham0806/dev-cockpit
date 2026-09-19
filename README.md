@@ -74,7 +74,7 @@ Devin側はサンプルで `devin --model swe --permission-mode accept-edits --r
 
 ### Routing履歴
 
-`runtime/router.jsonl` に時刻、選択Agent、confidence、risk scoreを1行JSONで記録します。プロンプト本文は保存せず、SHA-256と文字数だけを保存します。将来、実タスクの成功率から閾値を調整するためのデータとして利用できます。
+`runtime/router.jsonl` に routing decision と job outcome（完了/失敗、exit code）を1行JSONで記録します。プロンプト本文は保存せず、SHA-256と文字数だけを保存します。選択Agent、confidence、risk scoreと結果を結び付けられるため、将来は実タスクの成功率から閾値を調整できます。
 
 ## 安全策
 
