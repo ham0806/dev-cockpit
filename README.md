@@ -1,11 +1,11 @@
 # Dev Cockpit
 
-タブレットや別端末のSafari/PWAから、開発マシン上のCodex / Cursor CLIへ指示を送り、Job単位のGit worktreeと差分を確認するための薄い開発コンソールです。
+タブレットや別端末のSafari/PWAから、開発マシン上のCodex / Cursor / Devin CLIへ指示を送り、Job単位のGit worktreeと差分を確認するための薄い開発コンソールです。
 
 ## MVPの範囲
 
 - Projectの許可リストから対象リポジトリを選択
-- Codex / Cursor CLIをJob単位のGit worktreeで起動
+- Codex / Cursor / Devin CLIをJob単位のGit worktreeで起動
 - Job ID、状態、stdoutログ、変更ファイル、Git diffを確認
 - 差分中のMarkdownをSource / Renderedで確認
 - 同じworktreeへ修正指示を送信
@@ -45,6 +45,36 @@ python .\server.py --config .\config.json
 - `{job_id}`: Job ID
 
 Codex CLIやCursor Agent CLIのインストール場所・利用可能な引数は環境ごとに異なるため、`config.example.json` をコピーした後に手元のCLI仕様へ合わせてください。シークレットやAPI keyをコマンド・設定ファイルへ直接書かないでください。
+
+## Auto routing（Jev + Devin SWE-2）
+
+`config.json` の `routing.enabled` を `true` にすると、UIに `Auto (Jev)` が追加されます。Autoではタスク本文をJevへ渡し、設定済みAgentから実行先を選びます。Agentを明示選択した場合はルーターを通りません。
+
+サンプル設定では次の役割分担にしています。
+
+- `devin-swe2`: 通常の実装、バグ修正、テスト、定型的なリファクタの第一候補
+- `codex-luna`: README、誤字、整形などのごく軽い変更
+- `codex-sol`: 複雑なデバッグ、複数コンポーネント、移行や設計
+- `codex-astra`: 高リスク、高曖昧性、大きなblast radiusを伴う例外的なタスクだけ
+
+Astraが選ばれても `architecture_impact` / `ambiguity` / `blast_radius` の最大スコアが `astra_min_score` 未満ならSolへ落とします。Jevがタイムアウト・未設定・APIエラーになった場合もJobを失敗させず、ローカルのヒューリスティックへフォールバックします。ヒューリスティックからAstraを自動選択することはありません。
+
+### Jevのセットアップ
+
+Node.jsを用意し、リポジトリ直下で次を実行します。
+
+```powershell
+npm install --prefix tools
+$env:AI_GATEWAY_API_KEY = 'Vercel AI GatewayのAPI key'
+```
+
+`tools/jev-route.mjs` は AI SDK 7 の `experimental_evaluate` と `typesafe-ai/jev` を使用します。API keyは `config.json` に書かず環境変数だけで渡してください。Auto routingでは `zeroDataRetention` を要求します。
+
+Devin側はサンプルで `devin --model swe --permission-mode accept-edits --respect-workspace-trust false -p {prompt}` を使います。`swe` はSWEファミリの最新モデルを指す短縮名です。利用可能モデルは `devin models list` で確認できます。
+
+### Routing履歴
+
+`runtime/router.jsonl` に時刻、選択Agent、confidence、risk scoreを1行JSONで記録します。プロンプト本文は保存せず、SHA-256と文字数だけを保存します。将来、実タスクの成功率から閾値を調整するためのデータとして利用できます。
 
 ## 安全策
 
