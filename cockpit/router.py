@@ -134,7 +134,7 @@ class TaskRouter:
             source="jev",
             confidence=confidence,
             reasons=["jev_choice"],
-            scores=self._numbers(raw.get("scores")),
+            scores=self._numbers(raw.get("scores"), 0.0, 3.0),
             probabilities=self._numbers(raw.get("probabilities"), 0.0, 1.0),
         )
 
