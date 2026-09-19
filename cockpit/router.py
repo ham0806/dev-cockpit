@@ -176,14 +176,28 @@ class TaskRouter:
         return RouteDecision(agent=agent, source="heuristic", reasons=["evaluator_unavailable", reason], scores=scores)
 
     def _record(self, prompt: str, decision: RouteDecision) -> None:
-        if self.history_file is None:
-            return
-        record = {
+        self._append_history({
+            "event": "decision",
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "prompt_sha256": hashlib.sha256(prompt.encode("utf-8")).hexdigest(),
             "prompt_length": len(prompt),
             **decision.public(),
-        }
+        })
+
+    def record_outcome(self, prompt: str, agent: str, status: str, exit_code: int | None) -> None:
+        self._append_history({
+            "event": "outcome",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "prompt_sha256": hashlib.sha256(prompt.encode("utf-8")).hexdigest(),
+            "prompt_length": len(prompt),
+            "agent": agent,
+            "status": status,
+            "exit_code": exit_code,
+        })
+
+    def _append_history(self, record: dict[str, Any]) -> None:
+        if self.history_file is None:
+            return
         try:
             self.history_file.parent.mkdir(parents=True, exist_ok=True)
             with self.history_file.open("a", encoding="utf-8") as handle:
