@@ -19,12 +19,23 @@
     const projects = await request('/api/projects');
     $('project').replaceChildren(...projects.map((project) => { const option = document.createElement('option'); option.value = project.id; option.textContent = project.name; return option; }));
   }
+  async function loadAgents() {
+    const agents = await request('/api/agents');
+    if (!agents.length) throw new Error('利用可能なAgentがありません。');
+    const root = $('agent-picker'); root.replaceChildren();
+    agents.forEach((agent, index) => {
+      const label = document.createElement('label');
+      const input = document.createElement('input'); input.type = 'radio'; input.name = 'agent'; input.value = agent.id; input.checked = index === 0;
+      label.append(input, document.createTextNode(' ' + agent.name)); root.appendChild(label);
+    });
+  }
+  function agentLabel(job) { return job.routed_agent ? `${job.agent} → ${job.routed_agent}` : job.agent; }
   function renderJobs() {
     const root = $('jobs'); root.replaceChildren();
     if (!state.jobs.length) { root.innerHTML = '<p class="muted">まだJobはありません。</p>'; return; }
     for (const job of state.jobs) {
       const button = document.createElement('button'); button.className = `job ${job.id === state.selected ? 'selected' : ''}`; button.type = 'button';
-      const title = document.createElement('span'); title.className = 'job-title'; title.textContent = `${job.agent} #${job.id}`;
+      const title = document.createElement('span'); title.className = 'job-title'; title.textContent = `${agentLabel(job)} #${job.id}`;
       const prompt = document.createElement('span'); prompt.className = 'job-prompt'; prompt.textContent = job.prompt;
       const status = document.createElement('span'); status.className = `status ${job.status}`; status.textContent = statusLabel[job.status] || job.status;
       button.append(title, prompt, status); button.addEventListener('click', () => selectJob(job.id)); root.appendChild(button);
@@ -45,9 +56,10 @@
     return `<p>${html}</p>`;
   }
   async function renderDetail(job) {
-    $('detail').classList.remove('hidden'); $('detail-title').textContent = `${job.agent} #${job.id}`;
+    $('detail').classList.remove('hidden'); $('detail-title').textContent = `${agentLabel(job)} #${job.id}`;
     $('detail-status').className = `status ${job.status}`; $('detail-status').textContent = statusLabel[job.status] || job.status;
-    $('detail-meta').textContent = `Project: ${job.project_id} · Branch: ${job.branch || '準備中'} · Files: ${(job.changed_files || []).length}`;
+    const confidence = typeof job.route_confidence === 'number' ? ` · Confidence: ${job.route_confidence.toFixed(2)}` : ''; const route = job.routed_agent ? ` · Route: ${job.route_source || 'router'}${confidence}` : '';
+    $('detail-meta').textContent = `Project: ${job.project_id} · Branch: ${job.branch || '準備中'} · Files: ${(job.changed_files || []).length}${route}`;
     $('log').textContent = (job.log || []).join('\n'); $('stop').disabled = job.status !== 'running'; $('request-changes').disabled = job.status === 'running'; $('approve').disabled = job.status === 'running'; $('push').disabled = job.status === 'running';
     if (job.status !== 'running') { try { state.diff = await request(`/api/jobs/${job.id}/diff`); $('diff').textContent = state.diff.patch || '差分はありません。'; renderMarkdownFiles(state.diff.files || []); } catch (error) { $('diff').textContent = error.message; } }
   }
@@ -72,6 +84,6 @@
   $('push').addEventListener('click', () => withSelected(async () => { if (confirm('このJobのbranchをoriginへpushしますか？')) await request(`/api/jobs/${state.selected}/push`, { method: 'POST', body: '{}' }); }));
   $('discard').addEventListener('click', () => withSelected(async () => { if (confirm('worktreeとJob履歴を削除しますか？この操作は戻せません。')) { await request(`/api/jobs/${state.selected}`, { method: 'DELETE' }); state.selected = null; $('detail').classList.add('hidden'); } }));
   document.querySelectorAll('.tab').forEach((tab) => tab.addEventListener('click', () => { document.querySelectorAll('.tab').forEach((item) => item.classList.toggle('active', item === tab)); ['log', 'diff', 'markdown'].forEach((id) => $(id).classList.toggle('hidden', id !== tab.dataset.tab)); }));
-  async function boot() { try { await request('/api/health'); $('connection').textContent = 'PC ● Online'; $('connection').classList.add('online'); await loadProjects(); await loadJobs(); } catch (error) { $('connection').textContent = 'PC ● Offline'; setError(error.message); } }
+  async function boot() { try { await request('/api/health'); $('connection').textContent = 'PC ● Online'; $('connection').classList.add('online'); await Promise.all([loadProjects(), loadAgents()]); await loadJobs(); } catch (error) { $('connection').textContent = 'PC ● Offline'; setError(error.message); } }
   boot(); setInterval(() => loadJobs().catch(() => {}), 4000);
 })();
