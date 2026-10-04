@@ -53,6 +53,7 @@ Codex CLIやCursor Agent CLIのインストール場所・利用可能な引数�
 - Jobごとに `runtime/jobs/<job-id>/worktree` を作ります。通常のworking treeへ直接書き込みません。
 - commit、push、worktree破棄はAPI/UIの別操作です。Agent完了だけでは実行しません。
 - `DEV_COCKPIT_TOKEN` を設定すると全APIにBearer認証を要求します。
+- `host` をloopback（127.0.0.1 / ::1 / localhost）以外へ変更する場合は `DEV_COCKPIT_TOKEN` が必須です。未設定ではサーバーは起動しません。
 - `Discard worktree` はworktreeとJob履歴を削除する不可逆操作です。
 - `config.json`、runtime data、credential類はGitへ追加しません。
 

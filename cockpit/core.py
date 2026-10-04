@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -17,6 +18,7 @@ from typing import Any, Callable, Iterable
 
 MAX_PROMPT_LENGTH = 20_000
 MAX_COMMIT_MESSAGE_LENGTH = 200
+JOB_ID_PATTERN = re.compile(r"[0-9a-f]{1,64}")
 
 
 def utc_now() -> str:
@@ -92,11 +94,25 @@ class JobManager:
         self._lock = threading.RLock()
         self._load_jobs()
 
+    def _inside_jobs_root(self, path: Path) -> bool:
+        root, resolved = self.jobs_root.resolve(), path.resolve()
+        return resolved != root and root in resolved.parents
+
     def _load_jobs(self) -> None:
         for path in self.jobs_root.glob("*/job.json"):
             try:
-                raw = json.loads(path.read_text(encoding="utf-8"))
-                self._jobs[raw["id"]] = Job(**raw)
+                job = Job(**json.loads(path.read_text(encoding="utf-8")))
+                if not JOB_ID_PATTERN.fullmatch(job.id):
+                    raise ValueError("invalid job id")
+                if job.parent_id is not None and not JOB_ID_PATTERN.fullmatch(job.parent_id):
+                    raise ValueError("invalid parent id")
+                if job.worktree and not self._inside_jobs_root(Path(job.worktree)):
+                    raise ValueError("worktree escapes jobs root")
+                if job.status in {"queued", "running"}:
+                    # 再起動で実行中プロセスは失われるため、操作不能なゾンビ化を防ぐ。
+                    job.status, job.error, job.finished_at = "failed", "server restarted", utc_now()
+                    self._persist(job)
+                self._jobs[job.id] = job
             except (OSError, ValueError, TypeError, KeyError):
                 # 壊れた履歴1件でサーバー全体を起動不能にしない。
                 continue
@@ -127,8 +143,12 @@ class JobManager:
             raise ValueError("unknown project")
         if agent not in self.agents:
             raise ValueError("unknown agent")
-        if parent_id and self.get(parent_id).status == "running":
-            raise ValueError("the parent job is still running")
+        if parent_id:
+            parent = self.get(parent_id)
+            if parent.status in {"queued", "running"}:
+                raise ValueError("the parent job has not finished yet")
+            if not parent.worktree or not Path(parent.worktree).is_dir():
+                raise ValueError("the parent job has no usable worktree")
         job = Job(id=uuid.uuid4().hex[:12], project_id=project_id, agent=agent, prompt=prompt, parent_id=parent_id)
         with self._lock:
             self._jobs[job.id] = job
@@ -166,6 +186,8 @@ class JobManager:
         try:
             ensure_git_repository(project.repository)
             if parent:
+                if not parent.worktree or not self._inside_jobs_root(worktree):
+                    raise RuntimeError("parent worktree is outside the jobs root")
                 if not worktree.is_dir():
                     raise RuntimeError("parent worktree no longer exists")
             else:
@@ -205,6 +227,8 @@ class JobManager:
         if not job.worktree or not Path(job.worktree).is_dir():
             return
         worktree = Path(job.worktree)
+        # untrackedファイルも差分・レビュー対象に含める。
+        run_git(worktree, ["add", "--intent-to-add", "--all"])
         stat = run_git(worktree, ["diff", "--stat", "HEAD"])
         names = run_git(worktree, ["diff", "--name-status", "HEAD"])
         with self._lock:
@@ -280,11 +304,15 @@ class JobManager:
         job = self.get(job_id)
         if job.status == "running":
             raise ValueError("stop the running job before discarding it")
-        project, worktree = self.projects[job.project_id], Path(job.worktree)
-        if not job.parent_id and worktree.is_dir():
+        project = self.projects.get(job.project_id)
+        worktree = Path(job.worktree) if job.worktree else None
+        if project is not None and not job.parent_id and worktree is not None and worktree.is_dir() and self._inside_jobs_root(worktree):
             result = run_git(project.repository, ["worktree", "remove", "--force", str(worktree)], timeout=60)
             if result.returncode != 0:
                 raise RuntimeError(result.stderr.strip() or "git worktree remove failed")
-        shutil.rmtree(self.jobs_root / job.id, ignore_errors=False)
+        target = (self.jobs_root / job.id).resolve()
+        if target.parent != self.jobs_root.resolve():
+            raise ValueError("job directory escapes jobs root")
+        shutil.rmtree(target, ignore_errors=False)
         with self._lock:
             self._jobs.pop(job.id, None)
