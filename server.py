@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+import hmac
+import ipaddress
 import json
 import mimetypes
 import os
@@ -31,7 +33,9 @@ class CockpitHandler(BaseHTTPRequestHandler):
         return self.server.token  # type: ignore[attr-defined]
 
     def _authorized(self) -> bool:
-        return not self.token or self.headers.get("Authorization") == f"Bearer {self.token}"
+        if not self.token:
+            return True
+        return hmac.compare_digest(self.headers.get("Authorization", ""), f"Bearer {self.token}")
 
     def _json(self, payload: object, status: int = HTTPStatus.OK) -> None:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -164,12 +168,26 @@ class CockpitHandler(BaseHTTPRequestHandler):
         super().log_message(format, *args)
 
 
+def _is_loopback_host(host: str) -> bool:
+    if host.lower() == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
 def build_server(config_path: Path) -> ThreadingHTTPServer:
     config = load_config(config_path)
+    host = str(config.get("host", "127.0.0.1"))
+    token = os.environ.get("DEV_COCKPIT_TOKEN")
+    if not token and not _is_loopback_host(host):
+        # 非loopbackへ無認証で公開すると任意プロンプト実行が外部から可能になるため拒否する。
+        raise SystemExit("DEV_COCKPIT_TOKEN is required when host is not a loopback address")
     manager = JobManager(make_projects(config), make_agents(config), Path(config.get("jobs_root", config_path.parent / "runtime" / "jobs")).expanduser().resolve())
-    server = ThreadingHTTPServer((str(config.get("host", "127.0.0.1")), int(config.get("port", 8787))), CockpitHandler)
+    server = ThreadingHTTPServer((host, int(config.get("port", 8787))), CockpitHandler)
     server.manager = manager  # type: ignore[attr-defined]
-    server.token = os.environ.get("DEV_COCKPIT_TOKEN")  # type: ignore[attr-defined]
+    server.token = token  # type: ignore[attr-defined]
     return server
 
 
